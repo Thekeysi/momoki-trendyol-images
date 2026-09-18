@@ -1,0 +1,73 @@
+name: Import Momoki Images
+
+on:
+  push:
+    paths:
+      - '.github/workflows/import-momoki-images.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import-images:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install RAR extractor
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unrar || sudo apt-get install -y p7zip-full
+
+      - name: Download original archives
+        run: |
+          curl -L --fail --retry 4 --retry-delay 2 'https://uc2689c59f15db09a49ad869eaa8.dl.dropboxusercontent.com/cd/0/get/DIUDaTn67hLh2wl7nIvwRV1e7cddZLr7h2NH2_enDElKMsxphk6UnWXyUarnrYbG2yA6rsLxuk8o2dsHfg0iG0nEOEOxUBkVaQP82UB9o2oLKrG06RX4i2UJbkzNxkkex-RbJznrkeS2FMCE8kjDtXaI5HHwnC-4aU1E5YGrw_HKSg/file?c_luid=07ebdfa9' -o ciltli.rar
+          curl -L --fail --retry 4 --retry-delay 2 'https://uc1952a7c0f81ba52e3e4a99a2e8.dl.dropboxusercontent.com/cd/0/get/DIUufUKnfVEqBZwWfQGNno8LTGBB8qXNQRi80A0nm2LdVH_x-re7VyLtFkEFAdv3CIvo9mtaDWCkMQ3Zdh2M6qn_zfVi6oRqLonzf9DjqNyuCdHEw94QDdw5P9N32jMFFn-oWA6AN1xYfI5Yj_0uHaXyChGIxMQcMranPxkiOWdOxg/file?c_luid=07ebdfa9' -o spiral.rar
+
+      - name: Extract archives
+        run: |
+          mkdir -p extracted/ciltli extracted/spiral
+          if command -v unrar >/dev/null 2>&1; then
+            unrar x -o+ ciltli.rar extracted/ciltli/
+            unrar x -o+ spiral.rar extracted/spiral/
+          else
+            7z x -y ciltli.rar -oextracted/ciltli
+            7z x -y spiral.rar -oextracted/spiral
+          fi
+
+      - name: Normalize filenames without re-encoding images
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re, shutil
+
+          out = Path('images')
+          out.mkdir(exist_ok=True)
+          count = 0
+          for root in [Path('extracted/ciltli'), Path('extracted/spiral')]:
+              for src in root.rglob('*.png'):
+                  key = src.stem.upper().replace(' ', '')
+                  m = re.fullmatch(r'MMK(CL|SPR)-?(\d{3})([ABCD])', key)
+                  if not m:
+                      raise RuntimeError(f'Unrecognized filename: {src}')
+                  kind, num, letter = m.groups()
+                  idx = {'A':1,'B':2,'C':3,'D':4}[letter]
+                  dest = out / f'MMK{kind}-{num}_{idx}.png'
+                  shutil.copyfile(src, dest)
+                  if src.read_bytes() != dest.read_bytes():
+                      raise RuntimeError(f'Byte mismatch: {src} -> {dest}')
+                  count += 1
+          if count != 183:
+              raise RuntimeError(f'Expected 183 images, got {count}')
+          print(f'Prepared {count} byte-identical PNG files')
+          PY
+
+      - name: Commit images
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add images
+          git commit -m 'Add Momoki product images' || exit 0
+          git push
