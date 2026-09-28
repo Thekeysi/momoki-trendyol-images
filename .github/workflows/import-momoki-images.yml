@@ -21,53 +21,52 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y unrar || sudo apt-get install -y p7zip-full
 
-      - name: Download original archives
+      - name: Download çizgisiz defter archive
         run: |
-          curl -L --fail --retry 4 --retry-delay 2 'https://uc2689c59f15db09a49ad869eaa8.dl.dropboxusercontent.com/cd/0/get/DIUDaTn67hLh2wl7nIvwRV1e7cddZLr7h2NH2_enDElKMsxphk6UnWXyUarnrYbG2yA6rsLxuk8o2dsHfg0iG0nEOEOxUBkVaQP82UB9o2oLKrG06RX4i2UJbkzNxkkex-RbJznrkeS2FMCE8kjDtXaI5HHwnC-4aU1E5YGrw_HKSg/file?c_luid=07ebdfa9' -o ciltli.rar
-          curl -L --fail --retry 4 --retry-delay 2 'https://uc1952a7c0f81ba52e3e4a99a2e8.dl.dropboxusercontent.com/cd/0/get/DIUufUKnfVEqBZwWfQGNno8LTGBB8qXNQRi80A0nm2LdVH_x-re7VyLtFkEFAdv3CIvo9mtaDWCkMQ3Zdh2M6qn_zfVi6oRqLonzf9DjqNyuCdHEw94QDdw5P9N32jMFFn-oWA6AN1xYfI5Yj_0uHaXyChGIxMQcMranPxkiOWdOxg/file?c_luid=07ebdfa9' -o spiral.rar
+          curl -L --fail --retry 4 --retry-delay 2 'https://uc9ccc47462162face2fc22fd970.dl.dropboxusercontent.com/cd/0/get/DI8F2RW1MiMzhCWDD1FlF7w--KyjJQD-BRNeIkbXLjccCQPHekLDcyCjqNFnFCf9Ic1hJ4oBgteO6bRdLZ7crNJdSFy-mnMkLDzZvItf5AvT8ms-r3Eu0PrjRCuuyWPbQ4y9d8mZ9DlPHRNj9wX1vi2gPD241SWfGzBbFhRHoIy5gg/file?c_luid=07ebdfa9' -o cizgisiz.rar
 
-      - name: Extract archives
+      - name: Extract archive
         run: |
-          mkdir -p extracted/ciltli extracted/spiral
+          mkdir -p extracted/cizgisiz
           if command -v unrar >/dev/null 2>&1; then
-            unrar x -o+ ciltli.rar extracted/ciltli/
-            unrar x -o+ spiral.rar extracted/spiral/
+            unrar x -o+ cizgisiz.rar extracted/cizgisiz/
           else
-            7z x -y ciltli.rar -oextracted/ciltli
-            7z x -y spiral.rar -oextracted/spiral
+            7z x -y cizgisiz.rar -oextracted/cizgisiz
           fi
 
       - name: Normalize filenames without re-encoding images
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import re, shutil
+          import re, shutil, unicodedata
 
-          out = Path('images')
-          out.mkdir(exist_ok=True)
-          count = 0
-          for root in [Path('extracted/ciltli'), Path('extracted/spiral')]:
-              for src in root.rglob('*.png'):
-                  key = src.stem.upper().replace(' ', '')
-                  m = re.fullmatch(r'MMK(CL|SPR)-?(\d{3})([ABCD])', key)
-                  if not m:
-                      raise RuntimeError(f'Unrecognized filename: {src}')
-                  kind, num, letter = m.groups()
-                  idx = {'A':1,'B':2,'C':3,'D':4}[letter]
-                  dest = out / f'MMK{kind}-{num}_{idx}.png'
-                  shutil.copyfile(src, dest)
-                  if src.read_bytes() != dest.read_bytes():
-                      raise RuntimeError(f'Byte mismatch: {src} -> {dest}')
-                  count += 1
-          if count != 183:
-              raise RuntimeError(f'Expected 183 images, got {count}')
-          print(f'Prepared {count} byte-identical PNG files')
+          src_root = Path('extracted/cizgisiz')
+          out = Path('images/cizgisiz-defter-20260928')
+          out.mkdir(parents=True, exist_ok=True)
+
+          found = []
+          for src in src_root.rglob('*.png'):
+              stem = unicodedata.normalize('NFC', src.stem).upper().replace(' ', '')
+              stem = stem.replace('Ç', 'C')
+              m = re.fullmatch(r'MMKCD-?(\d{3})([ABCD])', stem)
+              if not m:
+                  continue
+              num, letter = m.groups()
+              dest = out / f'MMKCD-{num}{letter}.png'
+              shutil.copyfile(src, dest)
+              if src.read_bytes() != dest.read_bytes():
+                  raise RuntimeError(f'Byte mismatch: {src} -> {dest}')
+              found.append(dest.name)
+
+          if len(found) != 16:
+              raise RuntimeError(f'Expected 16 images, got {len(found)}: {found}')
+          print('Prepared:', *sorted(found), sep='\n')
           PY
 
       - name: Commit images
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add images
-          git commit -m 'Add Momoki product images' || exit 0
+          git add images/cizgisiz-defter-20260928
+          git commit -m 'Add Momoki çizgisiz defter images' || exit 0
           git push
